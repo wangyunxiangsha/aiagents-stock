@@ -1,3 +1,5 @@
+import env_bootstrap  # noqa: F401 — 必须在 streamlit 之前加载 .env 并处理代理
+
 import streamlit as st
 import plotly.graph_objects as go
 import plotly.express as px
@@ -9,19 +11,19 @@ import base64
 import os
 import config
 
-from stock_data import StockDataFetcher
-from ai_agents import StockAnalysisAgents
-from pdf_generator import display_pdf_export_section
-from database import db
-from monitor_manager import display_monitor_manager, get_monitor_summary
-from monitor_service import monitor_service
-from notification_service import notification_service
-from config_manager import config_manager
-from main_force_ui import display_main_force_selector
-from sector_strategy_ui import display_sector_strategy
-from longhubang_ui import display_longhubang
-from smart_monitor_ui import smart_monitor_ui
-from news_flow_ui import display_news_flow_monitor
+from stockapp.core.stock_data import StockDataFetcher
+from stockapp.core.ai_agents import StockAnalysisAgents
+from stockapp.core.pdf_generator import display_pdf_export_section
+from stockapp.common.database import db
+from stockapp.monitoring.monitor_manager import display_monitor_manager, get_monitor_summary
+from stockapp.monitoring.monitor_service import monitor_service
+from stockapp.monitoring.notification_service import notification_service
+from stockapp.common.config_manager import config_manager
+from stockapp.main_force.main_force_ui import display_main_force_selector
+from stockapp.sector_strategy.sector_strategy_ui import display_sector_strategy
+from stockapp.longhubang.longhubang_ui import display_longhubang
+from stockapp.smart_monitor.smart_monitor_ui import smart_monitor_ui
+from stockapp.news_flow.news_flow_ui import display_news_flow_monitor
 
 # 页面配置
 st.set_page_config(
@@ -443,7 +445,7 @@ def main():
         st.markdown(f"**监测服务**: {monitor_status}")
 
         try:
-            from monitor_db import monitor_db
+            from stockapp.monitoring.monitor_db import monitor_db
             stocks = monitor_db.get_monitored_stocks()
             notifications = monitor_db.get_pending_notifications()
             record_count = db.get_record_count()
@@ -517,25 +519,25 @@ def main():
     
     # 检查是否显示低价擒牛
     if 'show_low_price_bull' in st.session_state and st.session_state.show_low_price_bull:
-        from low_price_bull_ui import display_low_price_bull
+        from stockapp.strategies.low_price_bull_ui import display_low_price_bull
         display_low_price_bull()
         return
     
     # 检查是否显示小市值策略
     if 'show_small_cap' in st.session_state and st.session_state.show_small_cap:
-        from small_cap_ui import display_small_cap
+        from stockapp.strategies.small_cap_ui import display_small_cap
         display_small_cap()
         return
     
     # 检查是否显示净利增长策略
     if 'show_profit_growth' in st.session_state and st.session_state.show_profit_growth:
-        from profit_growth_ui import display_profit_growth
+        from stockapp.strategies.profit_growth_ui import display_profit_growth
         display_profit_growth()
         return
 
     # 检查是否显示低估值策略
     if 'show_value_stock' in st.session_state and st.session_state.show_value_stock:
-        from value_stock_ui import display_value_stock
+        from stockapp.strategies.value_stock_ui import display_value_stock
         display_value_stock()
         return
 
@@ -556,7 +558,7 @@ def main():
 
     # 检查是否显示持仓分析
     if 'show_portfolio' in st.session_state and st.session_state.show_portfolio:
-        from portfolio_ui import display_portfolio_manager
+        from stockapp.portfolio.portfolio_ui import display_portfolio_manager
         display_portfolio_manager()
         return
 
@@ -567,13 +569,13 @@ def main():
 
     # 检查是否显示宏观分析
     if 'show_macro_analysis' in st.session_state and st.session_state.show_macro_analysis:
-        from macro_analysis_ui import display_macro_analysis
+        from stockapp.macro_analysis.macro_analysis_ui import display_macro_analysis
         display_macro_analysis()
         return
 
     # 检查是否显示宏观周期分析
     if 'show_macro_cycle' in st.session_state and st.session_state.show_macro_cycle:
-        from macro_cycle_ui import display_macro_cycle
+        from stockapp.macro_cycle.macro_cycle_ui import display_macro_cycle
         display_macro_cycle()
         return
     
@@ -702,7 +704,13 @@ def main():
 
     if analyze_button and stock_input:
         if not api_key_status:
-            st.error("❌ 请先配置 DeepSeek API Key")
+            st.error(
+                "❌ 未检测到有效的 **DEEPSEEK_API_KEY**。请确认：\n"
+                "1. 在项目根目录（与 `app.py` 同级）存在 **`.env`** 文件（不是只改 `.env.example`）；\n"
+                "2. 其中一行形如：`DEEPSEEK_API_KEY=你的密钥`；\n"
+                "3. 修改后 **重启 Streamlit**。\n"
+                "也可在侧边栏 **「环境配置」** 中保存密钥。"
+            )
             return
 
         # 检查是否至少选择了一位分析师
@@ -913,7 +921,7 @@ def analyze_single_stock_for_batch(symbol, period, enabled_analysts_config=None,
         enable_fundamental = enabled_analysts_config.get('fundamental', True)
         if enable_fundamental and fetcher._is_chinese_stock(symbol):
             try:
-                from quarterly_report_data import QuarterlyReportDataFetcher
+                from stockapp.core.quarterly_report_data import QuarterlyReportDataFetcher
                 quarterly_fetcher = QuarterlyReportDataFetcher()
                 quarterly_data = quarterly_fetcher.get_quarterly_reports(symbol)
             except:
@@ -928,7 +936,7 @@ def analyze_single_stock_for_batch(symbol, period, enabled_analysts_config=None,
         fund_flow_data = None
         if enable_fund_flow and fetcher._is_chinese_stock(symbol):
             try:
-                from fund_flow_akshare import FundFlowAkshareDataFetcher
+                from stockapp.core.fund_flow_akshare import FundFlowAkshareDataFetcher
                 fund_flow_fetcher = FundFlowAkshareDataFetcher()
                 fund_flow_data = fund_flow_fetcher.get_fund_flow_data(symbol)
             except:
@@ -938,7 +946,7 @@ def analyze_single_stock_for_batch(symbol, period, enabled_analysts_config=None,
         sentiment_data = None
         if enable_sentiment and fetcher._is_chinese_stock(symbol):
             try:
-                from market_sentiment_data import MarketSentimentDataFetcher
+                from stockapp.core.market_sentiment_data import MarketSentimentDataFetcher
                 sentiment_fetcher = MarketSentimentDataFetcher()
                 sentiment_data = sentiment_fetcher.get_market_sentiment_data(symbol, stock_data)
             except:
@@ -948,7 +956,7 @@ def analyze_single_stock_for_batch(symbol, period, enabled_analysts_config=None,
         news_data = None
         if enable_news and fetcher._is_chinese_stock(symbol):
             try:
-                from qstock_news_data import QStockNewsDataFetcher
+                from stockapp.core.qstock_news_data import QStockNewsDataFetcher
                 news_fetcher = QStockNewsDataFetcher()
                 news_data = news_fetcher.get_stock_news(symbol)
             except:
@@ -1189,7 +1197,7 @@ def run_stock_analysis(symbol, period):
         if enable_fundamental and fetcher._is_chinese_stock(symbol):
             status_text.text("📊 正在获取季报数据（akshare数据源）...")
             try:
-                from quarterly_report_data import QuarterlyReportDataFetcher
+                from stockapp.core.quarterly_report_data import QuarterlyReportDataFetcher
                 quarterly_fetcher = QuarterlyReportDataFetcher()
                 quarterly_data = quarterly_fetcher.get_quarterly_reports(symbol)
                 if quarterly_data and quarterly_data.get('data_success'):
@@ -1216,7 +1224,7 @@ def run_stock_analysis(symbol, period):
         if enable_fund_flow and fetcher._is_chinese_stock(symbol):
             status_text.text("💰 正在获取资金流向数据（akshare数据源）...")
             try:
-                from fund_flow_akshare import FundFlowAkshareDataFetcher
+                from stockapp.core.fund_flow_akshare import FundFlowAkshareDataFetcher
                 fund_flow_fetcher = FundFlowAkshareDataFetcher()
                 fund_flow_data = fund_flow_fetcher.get_fund_flow_data(symbol)
                 if fund_flow_data and fund_flow_data.get('data_success'):
@@ -1236,7 +1244,7 @@ def run_stock_analysis(symbol, period):
         if enable_sentiment and fetcher._is_chinese_stock(symbol):
             status_text.text("📊 正在获取市场情绪数据（ARBR等指标）...")
             try:
-                from market_sentiment_data import MarketSentimentDataFetcher
+                from stockapp.core.market_sentiment_data import MarketSentimentDataFetcher
                 sentiment_fetcher = MarketSentimentDataFetcher()
                 sentiment_data = sentiment_fetcher.get_market_sentiment_data(symbol, stock_data)
                 if sentiment_data and sentiment_data.get('data_success'):
@@ -1255,7 +1263,7 @@ def run_stock_analysis(symbol, period):
         if enable_news and fetcher._is_chinese_stock(symbol):
             status_text.text("📰 正在获取新闻数据...")
             try:
-                from qstock_news_data import QStockNewsDataFetcher
+                from stockapp.core.qstock_news_data import QStockNewsDataFetcher
                 news_fetcher = QStockNewsDataFetcher()
                 news_data = news_fetcher.get_stock_news(symbol)
                 if news_data and news_data.get('data_success'):
@@ -1878,7 +1886,7 @@ def display_add_to_monitor_dialog(record):
         rating = final_decision.get('rating', '买入')
 
         # 检查是否已经在监测列表中
-        from monitor_db import monitor_db
+        from stockapp.monitoring.monitor_db import monitor_db
         existing_stocks = monitor_db.get_monitored_stocks()
         is_duplicate = any(stock['symbol'] == record['symbol'] for stock in existing_stocks)
 
@@ -1942,7 +1950,7 @@ def display_add_to_monitor_dialog(record):
                         st.balloons()
 
                         # 立即更新一次价格
-                        from monitor_service import monitor_service
+                        from stockapp.monitoring.monitor_service import monitor_service
                         monitor_service.manual_update_stock(stock_id)
 
                         # 清理session state并跳转到监测页面
@@ -2482,7 +2490,7 @@ def display_config_manager():
 
                         try:
                             # 创建临时通知服务实例
-                            from notification_service import NotificationService
+                            from stockapp.monitoring.notification_service import NotificationService
                             temp_notification_service = NotificationService()
                             success, message = temp_notification_service.send_test_webhook()
 

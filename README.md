@@ -1162,44 +1162,30 @@ WEBHOOK_KEYWORD=股票
 
 ## 🏗️ 系统架构
 
+业务代码已按功能归入 **`stockapp/`** 包；根目录保留 **`app.py`**（Streamlit 入口）、**`run.py`**、**`config.py`** 及 Docker / 依赖说明等。
+
 ```
 AI股票分析系统
-├── app.py                          # Streamlit主界面
-├── stock_data.py                   # 股票数据获取模块
-├── deepseek_client.py              # DeepSeek API客户端
-├── ai_agents.py                    # AI智能体分析模块
-├── monitor_manager.py              # 监测管理界面
-├── monitor_service.py              # 监测服务后台
-├── monitor_db.py                   # 监测数据库管理
-├── notification_service.py         # 通知服务（邮件/Webhook/界面）⭐️
-├── config_manager.py               # 配置管理模块 ⭐️
-├── miniqmt_interface.py            # MiniQMT量化交易接口 ⭐️
-├── longhubang_data.py              # 智瞰龙虎数据获取模块 ⭐️ 1017新增
-├── longhubang_db.py                # 智瞰龙虎数据库管理 ⭐️ 1017新增
-├── longhubang_agents.py            # 智瞰龙虎AI分析师团队 ⭐️ 1017新增
-├── longhubang_engine.py            # 智瞰龙虎分析引擎 ⭐️ 1017新增
-├── longhubang_pdf.py               # 智瞰龙虎PDF报告生成 ⭐️ 1017新增
-├── longhubang_ui.py                # 智瞰龙虎界面模块 ⭐️ 1017新增
-├── sector_strategy_data.py         # 智策数据采集模块 ⭐️
-├── sector_strategy_agents.py       # 智策AI智能体团队 ⭐️
-├── sector_strategy_engine.py       # 智策分析引擎 ⭐️
-├── sector_strategy_scheduler.py    # 智策定时任务调度器 ⭐️
-├── sector_strategy_ui.py           # 智策界面模块 ⭐️
-├── sector_strategy_pdf.py          # 智策PDF报告生成 ⭐️
-├── main_force_selector.py          # 主力选股数据获取
-├── main_force_analysis.py          # 主力选股AI分析
-├── main_force_ui.py                # 主力选股界面
-├── main_force_pdf_generator.py     # 主力选股报告生成
-├── pdf_generator.py                # PDF报告生成
-├── database.py                     # 分析记录数据库
-├── config.py                       # 配置文件
-├── requirements.txt                # 依赖包列表
-├── run.py                          # 启动脚本
-├── Dockerfile                      # Docker镜像构建文件 🐳
-├── docker-compose.yml              # Docker编排配置文件 🐳
-├── .dockerignore                   # Docker构建忽略文件 🐳
-└── DOCKER_DEPLOYMENT.md            # Docker部署详细文档 🐳
+├── app.py / run.py / config.py     # 入口与全局配置
+├── stockapp/                       # 应用代码包
+│   ├── common/                     # 公共：数据库、API 客户端、配置管理、TDX 数据源管理、miniQMT
+│   ├── core/                       # 单股分析：行情、智能体、PDF、季报/资金流/情绪等
+│   ├── monitoring/                 # 实时监测 + 通知（邮件/Webhook）
+│   ├── main_force/                 # 主力选股
+│   ├── sector_strategy/            # 智策板块
+│   ├── longhubang/                 # 智瞰龙虎
+│   ├── news_flow/                  # 新闻流量监测
+│   ├── macro_analysis/             # 宏观分析（统计局数据 × AI）
+│   ├── macro_cycle/                # 宏观周期（康波 × 美林时钟）
+│   ├── portfolio/                  # 持仓分析与定时调度
+│   ├── smart_monitor/              # AI 盯盘
+│   └── strategies/                 # 选股策略：低价擒牛、小市值、净利增长、低估值
+├── requirements.txt
+├── Dockerfile / docker-compose.yml
+└── docs/                           # 详细文档
 ```
+
+以下「核心模块说明」中的小标题仍按**原文件名**描述职责，对应源码路径为 **`stockapp/<子包>/<同名文件>.py`**（例如原 `stock_data.py` → `stockapp/core/stock_data.py`）。
 
 ### 核心模块说明
 

@@ -4,6 +4,8 @@ AI股票分析系统启动脚本
 运行命令: python run.py
 """
 
+import env_bootstrap  # noqa: F401 — 在依赖检查 import akshare 之前加载 .env / 代理设置
+
 import subprocess
 import sys
 import os

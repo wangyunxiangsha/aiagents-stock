@@ -1,15 +1,28 @@
-import os
-from dotenv import load_dotenv
+import env_bootstrap  # noqa: F401 — 与 app 入口一致：先加载根目录 .env 并处理 DISABLE_ENV_HTTP_PROXY
 
-# 加载环境变量（override=True 强制覆盖已存在的环境变量）
-load_dotenv(override=True)
+import os
+
+
+def _normalize_deepseek_base_url(url: str) -> str:
+    u = (url or "").strip().rstrip("/")
+    if not u:
+        return "https://api.deepseek.com/v1"
+    # OpenAI 兼容客户端一般要求 base 以 /v1 结尾
+    if u.endswith("/v1"):
+        return u
+    return f"{u}/v1"
+
 
 # DeepSeek API配置
 DEEPSEEK_API_KEY = os.getenv("DEEPSEEK_API_KEY", "")
-DEEPSEEK_BASE_URL = os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1")
+DEEPSEEK_BASE_URL = _normalize_deepseek_base_url(os.getenv("DEEPSEEK_BASE_URL", "https://api.deepseek.com/v1"))
 
-# 默认AI模型名称（支持任何OpenAI兼容的模型）
-DEFAULT_MODEL_NAME = os.getenv("DEFAULT_MODEL_NAME", "deepseek-chat")
+# 默认AI模型名称（支持任何OpenAI兼容的模型；兼容 .env 中的 DEEPSEEK_MODEL）
+DEFAULT_MODEL_NAME = (
+    os.getenv("DEFAULT_MODEL_NAME")
+    or os.getenv("DEEPSEEK_MODEL")
+    or "deepseek-chat"
+)
 
 # 其他配置
 TUSHARE_TOKEN = os.getenv("TUSHARE_TOKEN", "")
