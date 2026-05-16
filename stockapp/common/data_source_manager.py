@@ -4,6 +4,7 @@
 - 日线行情：AkShare → Tushare → BaoStock
 - 实时行情：AkShare → Tushare → BaoStock（5 分钟线聚合 + 日线昨收）
 - 财务数据：AkShare → Tushare → BaoStock（季频指标表，非新浪全科目明细）
+- 市场情绪（换手率 / 上证涨跌幅）：AkShare 全表类接口易断连时可用 BaoStock 日线字段（免 Token）
 Tushare 的 daily 等接口需足够积分；BaoStock 免费无需 Token。
 """
 
@@ -465,6 +466,125 @@ class DataSourceManager:
         return df
 
     @staticmethod
+    def _interpret_turnover(turnover: float) -> str:
+        if turnover > 20:
+            return "换手率极高（>20%），资金活跃度极高，可能存在炒作"
+        if turnover > 10:
+            return "换手率较高（>10%），交易活跃"
+        if turnover > 5:
+            return "换手率正常（5%-10%），交易适中"
+        if turnover > 2:
+            return "换手率偏低（2%-5%），交易相对清淡"
+        return "换手率很低（<2%），交易清淡"
+
+    def get_latest_turnover_baostock(self, symbol: str) -> Optional[dict]:
+        """
+        从 BaoStock 最近日线取换手率（不依赖东财 spot 全表；免 Token）。
+        返回结构与 market_sentiment_data._get_turnover_rate 一致。
+        """
+        try:
+            import baostock as bs
+        except ImportError:
+            print("[BaoStock] 未安装 baostock，请执行: pip install baostock")
+            return None
+
+        bs_code = self._convert_to_bs_code(symbol)
+        if not bs_code:
+            return None
+
+        end_s = datetime.now().strftime("%Y-%m-%d")
+        start_s = (datetime.now() - timedelta(days=45)).strftime("%Y-%m-%d")
+        print(f"[BaoStock] 正在获取 {symbol} 的换手率（第三数据源）...")
+        lg = bs.login()
+        if lg.error_code != "0":
+            print(f"[BaoStock] ❌ 登录失败: {lg.error_msg}")
+            return None
+        try:
+            rs = bs.query_history_k_data_plus(
+                bs_code,
+                "date,turn",
+                start_date=start_s,
+                end_date=end_s,
+                frequency="d",
+                adjustflag="2",
+            )
+            if rs.error_code != "0":
+                print(f"[BaoStock] ❌ 查询失败: {rs.error_msg}")
+                return None
+            rows = []
+            while rs.error_code == "0" and rs.next():
+                rows.append(rs.get_row_data())
+            if not rows:
+                print("[BaoStock] ❌ 换手率数据为空")
+                return None
+            df = pd.DataFrame(rows, columns=rs.fields)
+            df["turn"] = pd.to_numeric(df["turn"], errors="coerce")
+            last = df.iloc[-1]
+            turn = float(last["turn"]) if pd.notna(last.get("turn")) else None
+            if turn is None:
+                return None
+            print(f"[BaoStock] ✅ 成功获取换手率: {turn}%")
+            return {
+                "current_turnover_rate": turn,
+                "interpretation": self._interpret_turnover(turn),
+            }
+        except Exception as e:
+            print(f"[BaoStock] ❌ 获取换手率失败: {e}")
+            return None
+        finally:
+            bs.logout()
+
+    def get_sse_index_sentiment_baostock(self) -> Optional[dict]:
+        """
+        上证指数最新涨跌幅（BaoStock sh.000001 日线 pctChg）。
+        不含全市场涨跌家数（需 AkShare spot 或额外数据源）。
+        """
+        try:
+            import baostock as bs
+        except ImportError:
+            print("[BaoStock] 未安装 baostock，请执行: pip install baostock")
+            return None
+
+        end_s = datetime.now().strftime("%Y-%m-%d")
+        start_s = (datetime.now() - timedelta(days=15)).strftime("%Y-%m-%d")
+        print("[BaoStock] 正在获取上证指数涨跌幅（第三数据源）...")
+        lg = bs.login()
+        if lg.error_code != "0":
+            print(f"[BaoStock] ❌ 登录失败: {lg.error_msg}")
+            return None
+        try:
+            rs = bs.query_history_k_data_plus(
+                "sh.000001",
+                "date,close,pctChg",
+                start_date=start_s,
+                end_date=end_s,
+                frequency="d",
+                adjustflag="3",
+            )
+            if rs.error_code != "0":
+                print(f"[BaoStock] ❌ 查询失败: {rs.error_msg}")
+                return None
+            rows = []
+            while rs.error_code == "0" and rs.next():
+                rows.append(rs.get_row_data())
+            if not rows:
+                print("[BaoStock] ❌ 指数数据为空")
+                return None
+            df = pd.DataFrame(rows, columns=rs.fields)
+            df["pctChg"] = pd.to_numeric(df["pctChg"], errors="coerce")
+            change_pct = float(df.iloc[-1]["pctChg"])
+            print("[BaoStock] ✅ 成功获取上证指数涨跌幅")
+            return {
+                "index_name": "上证指数",
+                "change_percent": change_pct,
+            }
+        except Exception as e:
+            print(f"[BaoStock] ❌ 获取大盘指数失败: {e}")
+            return None
+        finally:
+            bs.logout()
+
+    @staticmethod
     def _bs_recent_quarters(count: int):
         """从当前季起向前生成 (year, quarter)。"""
         d = datetime.now()
@@ -578,7 +698,7 @@ class DataSourceManager:
                     "high": h,
                     "low": l,
                     "open": o,
-                    "pre_close": pre_close if pre_close is not None else c,
+                    "pre_close": pre_close if pre_close is not None else close_px,
                 }
             elif drows:
                 ddf = pd.DataFrame(drows, columns=rsd.fields)
@@ -598,11 +718,11 @@ class DataSourceManager:
                     "price": close_px,
                     "change_percent": pct,
                     "change": chg,
-                    "volume": float(row["volume"]),
-                    "amount": float(row["amount"]),
-                    "high": float(row["high"]),
-                    "low": float(row["low"]),
-                    "open": float(row["open"]),
+                    "volume": float(last["volume"]),
+                    "amount": float(last["amount"]),
+                    "high": float(last["high"]),
+                    "low": float(last["low"]),
+                    "open": float(last["open"]),
                     "pre_close": pre_close,
                 }
         except Exception as e:

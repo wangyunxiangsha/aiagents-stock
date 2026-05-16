@@ -2,6 +2,9 @@ import os
 import openai
 import json
 from typing import Dict, List, Any, Optional
+
+import httpx
+
 import config
 
 _MISSING_KEY_HINT = (
@@ -9,6 +12,19 @@ _MISSING_KEY_HINT = (
     "或设置环境变量 OPENAI_API_KEY，并填写 DEEPSEEK_BASE_URL（默认可为 DeepSeek 官方地址）。"
     "保存后请重启 Streamlit。"
 )
+
+
+def _openai_client(api_key: str, base_url: str) -> openai.OpenAI:
+    """
+    构造 OpenAI 兼容客户端。
+    若已用 env_bootstrap 清空进程内 HTTP_PROXY，可单独设置 LLM_HTTP_PROXY / OPENAI_HTTP_PROXY
+    让大模型请求仍走本地代理（与 AkShare 直连分离）。
+    """
+    proxy = (os.getenv("LLM_HTTP_PROXY") or os.getenv("OPENAI_HTTP_PROXY") or "").strip()
+    if proxy:
+        http_client = httpx.Client(proxy=proxy, timeout=120.0)
+        return openai.OpenAI(api_key=api_key, base_url=base_url, http_client=http_client)
+    return openai.OpenAI(api_key=api_key, base_url=base_url)
 
 
 class DeepSeekClient:
@@ -19,7 +35,7 @@ class DeepSeekClient:
         api_key = (getattr(config, "DEEPSEEK_API_KEY", None) or os.getenv("OPENAI_API_KEY") or "").strip()
         base_url = (getattr(config, "DEEPSEEK_BASE_URL", None) or os.getenv("OPENAI_BASE_URL") or "https://api.deepseek.com/v1").strip().rstrip("/")
         if api_key:
-            self.client = openai.OpenAI(api_key=api_key, base_url=base_url)
+            self.client = _openai_client(api_key, base_url)
         else:
             self.client = None
         

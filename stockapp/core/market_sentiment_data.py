@@ -6,6 +6,7 @@
 import pandas as pd
 import numpy as np
 import akshare as ak
+import time
 from datetime import datetime, timedelta
 import warnings
 import sys
@@ -329,174 +330,156 @@ class MarketSentimentDataFetcher:
         }
     
     def _get_turnover_rate(self, symbol):
-        """获取换手率数据（支持akshare和tushare自动切换）"""
-        try:
-            # 优先使用akshare获取最近的换手率数据
-            print(f"   [Akshare] 正在获取换手率数据...")
-            # 获取A股实时行情数据（不需要参数）
-            df = ak.stock_zh_a_spot_em()
-            if df is not None and not df.empty:
-                stock_data = df[df['代码'] == symbol]
-                if not stock_data.empty:
-                    row = stock_data.iloc[0]
-                    turnover_rate = row.get('换手率', 'N/A')
-                    
-                    # 解读换手率
-                    interpretation = ""
-                    if turnover_rate != 'N/A':
-                        try:
-                            turnover = float(turnover_rate)
-                            if turnover > 20:
-                                interpretation = "换手率极高（>20%），资金活跃度极高，可能存在炒作"
-                            elif turnover > 10:
-                                interpretation = "换手率较高（>10%），交易活跃"
-                            elif turnover > 5:
-                                interpretation = "换手率正常（5%-10%），交易适中"
-                            elif turnover > 2:
-                                interpretation = "换手率偏低（2%-5%），交易相对清淡"
-                            else:
-                                interpretation = "换手率很低（<2%），交易清淡"
-                        except:
-                            pass
-                    
-                    print(f"   [Akshare] ✅ 成功获取换手率: {turnover_rate}%")
-                    return {
-                        "current_turnover_rate": turnover_rate,
-                        "interpretation": interpretation
-                    }
-        except Exception as e:
-            print(f"   [Akshare] ❌ 获取换手率失败: {e}")
-            
-            # akshare失败，尝试tushare
-            if data_source_manager.tushare_available:
-                try:
-                    print(f"   [Tushare] 正在获取换手率数据（备用数据源）...")
-                    ts_code = data_source_manager._convert_to_ts_code(symbol)
-                    
-                    # 获取最近一个交易日的数据
-                    df = data_source_manager.tushare_api.daily_basic(
-                        ts_code=ts_code,
-                        trade_date=datetime.now().strftime('%Y%m%d')
-                    )
-                    
-                    if df is not None and not df.empty:
-                        row = df.iloc[0]
-                        turnover_rate = row.get('turnover_rate', 'N/A')
-                        
-                        # 解读换手率
+        """获取换手率数据（AkShare → BaoStock → Tushare；spot 全表易断连时由 BaoStock 日线兜底）"""
+        last_err = None
+        for attempt in range(1, 4):
+            try:
+                print(f"   [Akshare] 正在获取换手率数据（{attempt}/3）...")
+                df = ak.stock_zh_a_spot_em()
+                if df is not None and not df.empty:
+                    stock_data = df[df["代码"] == symbol]
+                    if not stock_data.empty:
+                        row = stock_data.iloc[0]
+                        turnover_rate = row.get("换手率", "N/A")
                         interpretation = ""
-                        if turnover_rate != 'N/A':
+                        if turnover_rate != "N/A":
                             try:
                                 turnover = float(turnover_rate)
-                                if turnover > 20:
-                                    interpretation = "换手率极高（>20%），资金活跃度极高，可能存在炒作"
-                                elif turnover > 10:
-                                    interpretation = "换手率较高（>10%），交易活跃"
-                                elif turnover > 5:
-                                    interpretation = "换手率正常（5%-10%），交易适中"
-                                elif turnover > 2:
-                                    interpretation = "换手率偏低（2%-5%），交易相对清淡"
-                                else:
-                                    interpretation = "换手率很低（<2%），交易清淡"
-                            except:
+                                interpretation = data_source_manager._interpret_turnover(turnover)
+                            except Exception:
                                 pass
-                        
-                        print(f"   [Tushare] ✅ 成功获取换手率: {turnover_rate}%")
+                        print(f"   [Akshare] ✅ 成功获取换手率: {turnover_rate}%")
                         return {
                             "current_turnover_rate": turnover_rate,
-                            "interpretation": interpretation
+                            "interpretation": interpretation,
                         }
-                except Exception as te:
-                    print(f"   [Tushare] ❌ 获取失败: {te}")
-        
-        return None
-    
-    def _get_market_index_sentiment(self):
-        """获取大盘指数情绪（支持akshare和tushare自动切换）"""
-        try:
-            # 优先使用akshare获取上证指数实时数据
-            print(f"   [Akshare] 正在获取大盘指数数据...")
-            # 使用正确的symbol参数
-            df = ak.stock_zh_index_spot_em(symbol="上证系列指数")
-            if df is not None and not df.empty:
-                # 查找上证指数（代码为000001）
-                sh_index = df[df['代码'] == '000001']
-                if not sh_index.empty:
-                    row = sh_index.iloc[0]
-                    change_pct = row.get('涨跌幅', 0)
-                    
-                    # 获取涨跌家数
-                    try:
-                        market_summary = ak.stock_zh_a_spot_em()
-                        if market_summary is not None and not market_summary.empty:
-                            up_count = len(market_summary[market_summary['涨跌幅'] > 0])
-                            down_count = len(market_summary[market_summary['涨跌幅'] < 0])
-                            total_count = len(market_summary)
-                            flat_count = total_count - up_count - down_count
-                            
-                            # 计算市场情绪指数
-                            sentiment_score = (up_count - down_count) / total_count * 100
-                            
-                            # 解读市场情绪
-                            if sentiment_score > 30:
-                                sentiment = "市场情绪极度乐观"
-                            elif sentiment_score > 10:
-                                sentiment = "市场情绪偏多"
-                            elif sentiment_score > -10:
-                                sentiment = "市场情绪中性"
-                            elif sentiment_score > -30:
-                                sentiment = "市场情绪偏空"
-                            else:
-                                sentiment = "市场情绪极度悲观"
-                            
-                            print(f"   [Akshare] ✅ 成功获取大盘数据")
-                            return {
-                                "index_name": "上证指数",
-                                "change_percent": change_pct,
-                                "up_count": up_count,
-                                "down_count": down_count,
-                                "flat_count": flat_count,
-                                "total_count": total_count,
-                                "sentiment_score": f"{sentiment_score:.2f}",
-                                "sentiment_interpretation": sentiment
-                            }
-                    except Exception as e:
-                        print(f"   [Akshare] 获取涨跌家数失败: {e}")
-                    
-                    print(f"   [Akshare] ✅ 成功获取指数涨跌幅")
+                last_err = RuntimeError("行情表中无该代码或缺少换手率")
+            except Exception as e:
+                last_err = e
+                print(f"   [Akshare] 第 {attempt}/3 次失败: {e}")
+            if attempt < 3:
+                time.sleep(1.2 * attempt)
+        if last_err is not None:
+            print(f"   [Akshare] ❌ 获取换手率失败: {last_err}")
+
+        bs_turn = data_source_manager.get_latest_turnover_baostock(symbol)
+        if bs_turn:
+            return bs_turn
+
+        if data_source_manager.tushare_available:
+            try:
+                print(f"   [Tushare] 正在获取换手率数据（备用数据源）...")
+                ts_code = data_source_manager._convert_to_ts_code(symbol)
+
+                df = data_source_manager.tushare_api.daily_basic(
+                    ts_code=ts_code,
+                    trade_date=datetime.now().strftime("%Y%m%d"),
+                )
+
+                if df is not None and not df.empty:
+                    row = df.iloc[0]
+                    turnover_rate = row.get("turnover_rate", "N/A")
+
+                    interpretation = ""
+                    if turnover_rate != "N/A":
+                        try:
+                            turnover = float(turnover_rate)
+                            interpretation = data_source_manager._interpret_turnover(turnover)
+                        except Exception:
+                            pass
+
+                    print(f"   [Tushare] ✅ 成功获取换手率: {turnover_rate}%")
                     return {
-                        "index_name": "上证指数",
-                        "change_percent": change_pct
+                        "current_turnover_rate": turnover_rate,
+                        "interpretation": interpretation,
                     }
-        except Exception as e:
-            print(f"   [Akshare] ❌ 获取大盘指数失败: {e}")
-            
-            # akshare失败，尝试tushare
-            if data_source_manager.tushare_available:
-                try:
-                    print(f"   [Tushare] 正在获取大盘指数数据（备用数据源）...")
-                    
-                    # 获取上证指数数据
-                    df = data_source_manager.tushare_api.index_daily(
-                        ts_code='000001.SH',
-                        start_date=datetime.now().strftime('%Y%m%d'),
-                        end_date=datetime.now().strftime('%Y%m%d')
-                    )
-                    
-                    if df is not None and not df.empty:
-                        row = df.iloc[0]
-                        change_pct = row.get('pct_chg', 0)
-                        
-                        print(f"   [Tushare] ✅ 成功获取大盘指数涨跌幅: {change_pct}%")
+            except Exception as te:
+                print(f"   [Tushare] ❌ 获取失败: {te}")
+
+        return None
+
+    def _get_market_index_sentiment(self):
+        """获取大盘指数情绪（AkShare → BaoStock → Tushare；指数 spot 易断连时由 BaoStock 日线兜底）"""
+        last_err = None
+        for attempt in range(1, 4):
+            try:
+                print(f"   [Akshare] 正在获取大盘指数数据（{attempt}/3）...")
+                df = ak.stock_zh_index_spot_em(symbol="上证系列指数")
+                if df is not None and not df.empty:
+                    sh_index = df[df["代码"] == "000001"]
+                    if not sh_index.empty:
+                        row = sh_index.iloc[0]
+                        change_pct = row.get("涨跌幅", 0)
+                        try:
+                            market_summary = ak.stock_zh_a_spot_em()
+                            if market_summary is not None and not market_summary.empty:
+                                up_count = len(market_summary[market_summary["涨跌幅"] > 0])
+                                down_count = len(market_summary[market_summary["涨跌幅"] < 0])
+                                total_count = len(market_summary)
+                                flat_count = total_count - up_count - down_count
+                                sentiment_score = (up_count - down_count) / total_count * 100
+                                if sentiment_score > 30:
+                                    sentiment = "市场情绪极度乐观"
+                                elif sentiment_score > 10:
+                                    sentiment = "市场情绪偏多"
+                                elif sentiment_score > -10:
+                                    sentiment = "市场情绪中性"
+                                elif sentiment_score > -30:
+                                    sentiment = "市场情绪偏空"
+                                else:
+                                    sentiment = "市场情绪极度悲观"
+                                print("   [Akshare] ✅ 成功获取大盘数据")
+                                return {
+                                    "index_name": "上证指数",
+                                    "change_percent": change_pct,
+                                    "up_count": up_count,
+                                    "down_count": down_count,
+                                    "flat_count": flat_count,
+                                    "total_count": total_count,
+                                    "sentiment_score": f"{sentiment_score:.2f}",
+                                    "sentiment_interpretation": sentiment,
+                                }
+                        except Exception as e:
+                            print(f"   [Akshare] 获取涨跌家数失败: {e}")
+                        print("   [Akshare] ✅ 成功获取指数涨跌幅")
                         return {
                             "index_name": "上证指数",
-                            "change_percent": change_pct
+                            "change_percent": change_pct,
                         }
-                except Exception as te:
-                    print(f"   [Tushare] ❌ 获取失败: {te}")
-        
+                last_err = RuntimeError("指数列表中无上证指数 000001")
+            except Exception as e:
+                last_err = e
+                print(f"   [Akshare] 第 {attempt}/3 次失败: {e}")
+            if attempt < 3:
+                time.sleep(1.2 * attempt)
+        if last_err is not None:
+            print(f"   [Akshare] ❌ 获取大盘指数失败: {last_err}")
+
+        bs_snap = data_source_manager.get_sse_index_sentiment_baostock()
+        if bs_snap:
+            return bs_snap
+
+        if data_source_manager.tushare_available:
+            try:
+                print("   [Tushare] 正在获取大盘指数数据（备用数据源）...")
+                df = data_source_manager.tushare_api.index_daily(
+                    ts_code="000001.SH",
+                    start_date=datetime.now().strftime("%Y%m%d"),
+                    end_date=datetime.now().strftime("%Y%m%d"),
+                )
+                if df is not None and not df.empty:
+                    row = df.iloc[0]
+                    change_pct = row.get("pct_chg", 0)
+                    print(f"   [Tushare] ✅ 成功获取大盘指数涨跌幅: {change_pct}%")
+                    return {
+                        "index_name": "上证指数",
+                        "change_percent": change_pct,
+                    }
+            except Exception as te:
+                print(f"   [Tushare] ❌ 获取失败: {te}")
+
         return None
-    
+
     def _get_limit_up_down_stats(self):
         """获取涨跌停统计数据"""
         try:
