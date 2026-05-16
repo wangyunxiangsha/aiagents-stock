@@ -18,6 +18,14 @@ from datetime import datetime, timedelta
 import env_bootstrap  # noqa: F401 — 确保 .env 与 DISABLE_ENV_HTTP_PROXY 已生效
 
 
+def _boot_log(msg: str) -> None:
+    """启动日志：部分环境默认编码非 UTF-8，避免 emoji 导致 import 阶段崩溃。"""
+    try:
+        print(msg, flush=True)
+    except UnicodeEncodeError:
+        print(msg.encode("ascii", "replace").decode("ascii"), flush=True)
+
+
 class DataSourceManager:
     """数据源管理器 - 实现akshare与tushare自动切换"""
     
@@ -33,12 +41,12 @@ class DataSourceManager:
                 ts.set_token(self.tushare_token)
                 self.tushare_api = ts.pro_api()
                 self.tushare_available = True
-                print("✅ Tushare数据源初始化成功")
+                _boot_log("[OK] Tushare数据源初始化成功")
             except Exception as e:
-                print(f"⚠️ Tushare数据源初始化失败: {e}")
+                _boot_log(f"[WARN] Tushare数据源初始化失败: {e}")
                 self.tushare_available = False
         else:
-            print("ℹ️ 未配置Tushare Token，将仅使用Akshare数据源")
+            _boot_log("[INFO] 未配置Tushare Token，将仅使用Akshare数据源")
     
     def get_stock_hist_data(self, symbol, start_date=None, end_date=None, adjust='qfq'):
         """

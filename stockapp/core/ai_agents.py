@@ -330,7 +330,7 @@ class StockAnalysisAgents:
 【最新新闻数据】
 {fetcher.format_news_for_ai(news_data)}
 
-以上是通过qstock获取的实际新闻数据，请重点基于这些数据进行分析。
+以上是通过东方财富（AkShare 新闻 + 东财公告 API）获取的实际新闻与公告，请重点基于这些数据进行分析。
 """
         
         news_prompt = f"""

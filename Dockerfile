@@ -1,8 +1,11 @@
 # 使用官方Python镜像作为基础镜像
 FROM swr.cn-north-4.myhuaweicloud.com/ddn-k8s/docker.io/python:3.12-slim
 
-# 设置时区环境变量
-ENV TZ=Asia/Shanghai
+# 设置时区与 UTF-8（避免容器内 print emoji 导致启动崩溃）
+ENV TZ=Asia/Shanghai \
+    LANG=C.UTF-8 \
+    LC_ALL=C.UTF-8 \
+    PYTHONUNBUFFERED=1
 
 # 替换apt-get源为国内源（阿里源）
 RUN echo "deb https://mirrors.aliyun.com/debian/ bookworm main" > /etc/apt/sources.list && \
@@ -67,7 +70,7 @@ EXPOSE 8080
 RUN chmod +x /app/docker-entrypoint.sh
 
 # 健康检查使用 shell 以读取运行时 PORT（构建阶段无 PORT 时回退 8503）
-HEALTHCHECK --interval=30s --timeout=15s --start-period=180s --retries=3 \
+HEALTHCHECK --interval=30s --timeout=15s --start-period=300s --retries=5 \
     CMD /bin/sh -c 'curl -fsS "http://127.0.0.1:${PORT:-8503}/_stcore/health" >/dev/null || exit 1'
 
 ENTRYPOINT ["/app/docker-entrypoint.sh"]

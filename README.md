@@ -680,6 +680,17 @@ docker-compose restart
 | 构建失败、拉不动华为云基础镜像 | 在 Zeabur 更换构建区域，或本地用官方 `python:3.12-slim` 改写 Dockerfile 基础镜像后再推 |
 | 页面能开但拉行情失败 | 配置 `TUSHARE_TOKEN`；海外节点访问东财可能不稳定，可尝试 Zeabur 香港等区域 |
 | 健康检查一直失败 | 确认 Zeabur 已注入 `PORT`；查看构建日志是否 Streamlit 启动报错 |
+| **崩溃重试 / Crashing** | 打开 **Logs** 看最后一行报错；常见：未配 `DEEPSEEK_API_KEY`、内存不足、首次加载过慢被健康检查杀掉；见下表 |
+
+**崩溃重试时优先检查（Logs）**
+
+| 日志关键词 | 处理 |
+|------------|------|
+| `DEEPSEEK` / `API key` | 在 Zeabur Variables 添加 `DEEPSEEK_API_KEY` |
+| `Killed` / `OOM` / `Memory` | 规格升到 4GB+，或减少并发分析 |
+| `Address already in use` / `port` | 勿手动设 `PORT=8503`；交给 Zeabur 注入 |
+| `UnicodeEncodeError` | 拉取最新代码（已加固 UTF-8 与启动日志）后 **重新部署** |
+| 构建阶段拉不动华为云基础镜像 | 换构建区域，或使用 `Dockerfile国际源版` 改名为 `Dockerfile` 再部署 |
 
 更多官方说明见：[Zeabur 文档](https://zeabur.com/docs)。
 
