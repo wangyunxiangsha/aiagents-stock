@@ -59,9 +59,10 @@ def main():
     print("=" * 50)
     
     try:
+        port = os.environ.get("PORT", "8503")
         subprocess.run([
             sys.executable, "-m", "streamlit", "run", "app.py",
-            "--server.port", "8503",
+            "--server.port", port,
             "--server.address", "127.0.0.1"
         ])
     except KeyboardInterrupt:

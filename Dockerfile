@@ -61,11 +61,13 @@ COPY . .
 # 创建必要的目录
 RUN mkdir -p /app/data && chmod 777 /app/data
 
-# 暴露Streamlit默认端口
-EXPOSE 8503
+# 监听端口：Zeabur 等 PaaS 会注入 PORT；入口脚本默认 8503（见 docker-entrypoint.sh）
+EXPOSE 8080
 
-# 设置健康检查
-HEALTHCHECK CMD curl --fail http://localhost:8503/_stcore/health || exit 1
+RUN chmod +x /app/docker-entrypoint.sh
 
-# 启动应用
-CMD ["streamlit", "run", "app.py", "--server.port=8503", "--server.address=0.0.0.0"]
+# 健康检查使用 shell 以读取运行时 PORT（构建阶段无 PORT 时回退 8503）
+HEALTHCHECK --interval=30s --timeout=15s --start-period=180s --retries=3 \
+    CMD /bin/sh -c 'curl -fsS "http://127.0.0.1:${PORT:-8503}/_stcore/health" >/dev/null || exit 1'
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]

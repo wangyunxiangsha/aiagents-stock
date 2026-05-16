@@ -549,9 +549,10 @@ StockAPI龙虎榜接口（每日更新，免费1000次）
 
 ### 部署方式选择
 
-本系统支持两种部署方式：
-- **🐳 Docker部署（推荐）**：一键启动，环境隔离，适合所有用户
-- **💻 本地部署**：传统方式，适合开发者
+本系统支持多种部署方式：
+- **🐳 Docker 部署（推荐）**：一键启动，环境隔离，适合自有服务器或本机
+- **☁️ Zeabur 云部署**：用 Dockerfile 托管 Streamlit，免运维（见下文「方式二」）
+- **💻 本地部署**：传统方式，适合开发者（见下文「方式三」）
 
 ---
 
@@ -599,7 +600,7 @@ DEEPSEEK_API_KEY=sk-your-actual-api-key-here
 ```bash
 # 使用国内源版Dockerfile构建
 docker build -f "Dockerfile国内源版" -t agentsstock1 .
-docker run -d -p 8503:8501 -v $(pwd)/.env:/app/.env --name agentsstock1 agentsstock1
+docker run -d -p 8503:8503 -v $(pwd)/.env:/app/.env --name agentsstock1 agentsstock1
 ```
 
 **标准构建方式**：
@@ -609,7 +610,7 @@ docker-compose up -d
 
 # 或使用标准 Dockerfile
 docker build -t agentsstock1 .
-docker run -d -p 8503:8501 -v $(pwd)/.env:/app/.env --name agentsstock1 agentsstock1
+docker run -d -p 8503:8503 -v $(pwd)/.env:/app/.env --name agentsstock1 agentsstock1
 ```
 
 #### 4. 访问系统（为避免端口冲突，已将运行端口改为8503）
@@ -631,9 +632,60 @@ docker-compose restart
 - [DOCKER_DEPLOYMENT.md](docs/DOCKER_DEPLOYMENT.md) - Docker部署完整指南
 - [DOCKER_CN_BUILD_GUIDE.md](docs/DOCKER_CN_BUILD_GUIDE.md) - 国内镜像源构建指南 ⭐ 推荐
 
+> **说明（Zeabur / 其他 PaaS）**：根目录 `Dockerfile` 已通过 `docker-entrypoint.sh` 读取环境变量 **`PORT`** 启动 Streamlit；平台注入的端口与健康检查一致。本地 `docker-compose` 未设置 `PORT` 时仍使用默认 **8503**。
+
 ---
 
-## 💻 方式二：本地部署
+## ☁️ 方式二：Zeabur 部署
+
+[Zeabur](https://zeabur.com) 支持从 Git 仓库构建 **Dockerfile** 并自动分配公网域名与 HTTPS。本仓库根目录 `Dockerfile` 已适配 **`PORT`**（见 `docker-entrypoint.sh`），可直接部署。
+
+### 适用场景
+
+- 需要公网访问 Streamlit 界面，又不想自建服务器
+- 已能接受：**TDX、miniQMT、局域网行情接口** 在云端 **不可用**（仅公网数据源 + 已配置的大模型 API 可用）
+
+### 部署步骤
+
+1. **准备代码**：将本仓库推送到 GitHub / GitLab 等 Zeabur 支持的 Git 源。
+2. **新建 Zeabur 项目**：登录 Zeabur → **New Project** → 选择 **Deploy your source code** → 选中本仓库。
+3. **服务类型**：Zeabur 识别到根目录 `Dockerfile` 后会按 **Docker** 构建；无需额外 `zbpack.json`（若控制台提示可选配置，保持默认即可）。
+4. **环境变量（必填与建议）**  
+   在服务的 **Variables / Environment** 中添加（名称与 `.env.example` 一致，勿把真实密钥提交到 Git）：
+
+   | 变量 | 说明 |
+   |------|------|
+   | `DEEPSEEK_API_KEY` | **必填**，大模型调用密钥 |
+   | `DEEPSEEK_BASE_URL` | 可选，默认 `https://api.deepseek.com/v1` |
+   | `DEFAULT_MODEL_NAME` | 可选，如 `deepseek-chat` |
+   | `TUSHARE_TOKEN` | 建议配置，AkShare 失败时作备用行情源 |
+   | `DISABLE_ENV_HTTP_PROXY` | 若在云端误走代理导致连不上数据源，可设为 `true` |
+
+   其余邮件、Webhook、MiniQMT 等可按需在 Zeabur 中配置；未使用可省略。
+
+5. **持久化（可选）**  
+   若依赖本地 SQLite（如 `stock_analysis.db`）且希望重启后不丢数据，请在 Zeabur 为该服务挂载 **持久存储（Volume）**，挂载路径需与程序读写路径一致（参见 [Zeabur 存储文档](https://zeabur.com/docs)）。不挂载时，容器重建会清空容器内未提交的文件。
+
+6. **构建与地区**  
+   - 若构建拉取基础镜像或 apt/pip 较慢，可在 Zeabur 中选择离镜像源更近的 **构建区域**，或改用仓库内 `Dockerfile国际源版` 自行改名/指定构建（高级用法）。  
+   - 首次 `pip install` 可能较慢，健康检查已加大 `start-period`，请耐心等待 **Running**。
+
+7. **访问**  
+   部署成功后，在 Zeabur 服务页面打开 **Public URL** 即可访问 Streamlit（端口由平台转发，**无需**手动填写 `8503`）。
+
+### 常见问题
+
+| 现象 | 处理 |
+|------|------|
+| 构建失败、拉不动华为云基础镜像 | 在 Zeabur 更换构建区域，或本地用官方 `python:3.12-slim` 改写 Dockerfile 基础镜像后再推 |
+| 页面能开但拉行情失败 | 配置 `TUSHARE_TOKEN`；海外节点访问东财可能不稳定，可尝试 Zeabur 香港等区域 |
+| 健康检查一直失败 | 确认 Zeabur 已注入 `PORT`；查看构建日志是否 Streamlit 启动报错 |
+
+更多官方说明见：[Zeabur 文档](https://zeabur.com/docs)。
+
+---
+
+## 💻 方式三：本地部署
 
 ### 1. 环境要求
 - Python 3.8+(微软store或官网，推荐3.12)
@@ -1162,7 +1214,7 @@ WEBHOOK_KEYWORD=股票
 
 ## 🏗️ 系统架构
 
-业务代码已按功能归入 **`stockapp/`** 包；根目录保留 **`app.py`**（Streamlit 入口）、**`run.py`**、**`config.py`** 及 Docker / 依赖说明等。
+业务代码已按功能归入 **`stockapp/`** 包；根目录保留 **`app.py`**（Streamlit 入口）、**`run.py`**、**`config.py`**、**`docker-entrypoint.sh`**（Docker/Zeabur 读取 `PORT` 启动）及 Docker / 依赖说明等。
 
 ```
 AI股票分析系统
