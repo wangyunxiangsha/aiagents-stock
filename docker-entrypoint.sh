@@ -1,5 +1,11 @@
 #!/bin/sh
-# Zeabur / Railway 等平台会注入 PORT；本地 Docker 未设置时默认 8503（与 README 一致）
+# Zeabur / Railway inject PORT; default 8503 for local Docker (see README)
 set -e
+export LANG=C.UTF-8
+export LC_ALL=C.UTF-8
+export PYTHONUNBUFFERED=1
+export STREAMLIT_SERVER_HEADLESS=true
+export STREAMLIT_BROWSER_GATHER_USAGE_STATS=false
+
 PORT="${PORT:-8503}"
-exec streamlit run app.py --server.port="$PORT" --server.address=0.0.0.0"
+exec streamlit run app.py --server.port="$PORT" --server.address=0.0.0.0 --server.headless=true --browser.gatherUsageStats=false
